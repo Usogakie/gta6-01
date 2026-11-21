@@ -1,139 +1,194 @@
-// The story engine for Palmera Bay: runs the five-mission chain, tracks the
-// current step, spawns rival gang members for fight steps, and pays out.
-import { MISSIONS } from './config.js';
-import { dist, range } from './random.js';
-import { addCrime } from './police.js';
+// The five-mission story: steps, spawning, completion and failure.
+import { mulberry32, range } from "./random.js";
 
-export function createMissionState() {
+export const MISSIONS = [
+  {
+    id: "first-wheels",
+    title: "First Wheels",
+    reward: 250,
+    briefing:
+      "Rosa needs wheels fast: steal any car on the street and bring it to the blue marker at the Marina garage.",
+    steps: [
+      { type: "steal", text: "Steal a car (walk up and press E)" },
+      { type: "goto", x: 600, y: 1240, radius: 70, text: "Drive to the Marina garage" },
+    ],
+  },
+  {
+    id: "delivery-run",
+    title: "Delivery Run",
+    reward: 400,
+    briefing:
+      "A package waits at the Old Port docks: pick it up, then deliver it to the Downtown tower before the clock runs out.",
+    steps: [
+      { type: "goto", x: 200, y: 320, radius: 70, text: "Pick up the package at the Old Port docks" },
+      { type: "goto", x: 1000, y: 420, radius: 70, timeLimit: 75, text: "Deliver the package to the Downtown tower" },
+    ],
+  },
+  {
+    id: "turf-war",
+    title: "Turf War",
+    reward: 600,
+    briefing:
+      "The Coral Kings are muscling in on Beachfront: take out their crew — four of them — then meet Rosa at the pier.",
+    steps: [
+      { type: "fight", count: 4, spawn: { x: 2050, y: 1000 }, text: "Take out the Coral Kings (4 left)" },
+      { type: "goto", x: 2300, y: 1880, radius: 70, text: "Meet Rosa at the pier" },
+    ],
+  },
+  {
+    id: "the-getaway",
+    title: "The Getaway",
+    reward: 800,
+    briefing:
+      "The job went loud and the whole Palmera Bay PD is on you, three stars and climbing: lose them, then reach the safehouse in North Hills.",
+    steps: [
+      { type: "escape", text: "Lose the police" },
+      { type: "goto", x: 2200, y: 320, radius: 70, text: "Reach the safehouse in North Hills" },
+    ],
+  },
+  {
+    id: "bay-king",
+    title: "Bay King",
+    reward: 1500,
+    briefing:
+      "One last job: the Kings' boss is holed up at the Marina warehouse with his crew; take them all down and the bay is yours.",
+    steps: [
+      { type: "fight", count: 6, spawn: { x: 600, y: 1560 }, text: "Take out the Kings at the warehouse (6 left)" },
+      { type: "goto", x: 600, y: 1560, radius: 80, text: "Claim the Marina warehouse" },
+    ],
+  },
+];
+
+export function createMissions() {
   return {
-    index: 0, // mission in MISSIONS, or MISSIONS.length when the story is done
-    stepIndex: 0,
-    stepTimer: 0,
-    stepStarted: false,
-    enemies: [], // rival gang members for the current fight step
+    index: 0,
+    step: 0,
+    timer: 0,
+    started: false,
+    enemies: [],
     killsLeft: 0,
-    packageHeld: false,
-    message: '',
-    messageAt: 0,
+    hasPackage: false,
     failed: null,
   };
 }
 
 export function currentMission(state) {
-  return state.index < MISSIONS.length ? MISSIONS[state.index] : null;
+  if (state.index >= MISSIONS.length) return null;
+  return MISSIONS[state.index];
 }
 
 export function currentStep(state) {
   const mission = currentMission(state);
-  return mission ? mission.steps[state.stepIndex] : null;
+  if (!mission) return null;
+  return mission.steps[state.step] || null;
 }
 
 export function objectiveText(state) {
-  const mission = currentMission(state);
-  if (!mission) return 'Free roam — Palmera Bay is yours, Vic.';
   const step = currentStep(state);
-  if (!step) return mission.title;
-  if (step.type === 'fight') return `${step.text.replace(/\(\d+ left\)/, `(${state.killsLeft} left)`)}`;
+  if (!step) return "Free roam — the bay is yours";
+  if (step.type === "fight") {
+    return step.text.replace(/\(\d+/, "(" + state.killsLeft);
+  }
   return step.text;
 }
 
-export function missionMarker(state) {
+export function currentMarker(state) {
   const step = currentStep(state);
-  if (step && step.type === 'goto') return { x: step.x, y: step.y, radius: step.radius };
-  return null;
+  if (!step || step.type !== "goto") return null;
+  return { x: step.x, y: step.y, radius: step.radius };
 }
 
-function spawnEnemies(state, step, rng) {
-  state.enemies = [];
-  for (let i = 0; i < step.count; i++) {
-    state.enemies.push({
-      x: step.spawn.x + range(rng, -90, 90),
-      y: step.spawn.y + range(rng, -90, 90),
-      health: 50,
-      speed: 95,
-      shootCooldown: range(rng, 0.5, 1.8),
-      angle: 0,
-      alive: true,
-    });
+export function startStep(state, seed) {
+  const step = currentStep(state);
+  if (!step) return;
+  state.started = true;
+  state.timer = step.timeLimit || 0;
+  if (step.type === "fight") {
+    const rng = mulberry32((seed || 20261121) + state.index * 101 + state.step * 17);
+    state.enemies = [];
+    for (let i = 0; i < step.count; i++) {
+      state.enemies.push({
+        x: step.spawn.x + range(rng, -90, 90),
+        y: step.spawn.y + range(rng, -90, 90),
+        angle: 0,
+        health: 50,
+        speed: 95,
+        cooldown: range(rng, 0.5, 1.8),
+        alive: true,
+      });
+    }
+    state.killsLeft = step.count;
   }
-  state.killsLeft = step.count;
 }
 
-export function beginStep(state, rng) {
-  const step = currentStep(state);
-  state.stepStarted = true;
-  state.stepTimer = step && step.timeLimit ? step.timeLimit : 0;
-  if (step && step.type === 'fight') spawnEnemies(state, step, rng);
-}
-
-// Advance the mission state one frame. Returns events for the main loop:
-// { completedMission, failed, pickedUp, stepDone }.
-export function updateMissions(state, game, dt, rng) {
-  const events = {};
+// env: { player, wanted, addCrime, onPickup, onComplete, onFail, onStoryDone }
+// Returns an events object describing what happened this frame.
+export function updateMissions(state, env, dt, now) {
+  const events = { pickup: false, completed: null, failed: null, storyDone: false };
   const mission = currentMission(state);
   if (!mission) return events;
   const step = currentStep(state);
   if (!step) return events;
-  if (!state.stepStarted) {
-    beginStep(state, rng);
-    if (step.type === 'escape' && game.wanted.stars < 3) {
-      // The getaway starts hot, as the briefing says: the whole PD is
-      // already on the player. Without this the escape step would complete
-      // at once, since the player usually arrives with no wanted stars.
-      addCrime(game.wanted, 3, game.time);
+
+  if (!state.started) {
+    startStep(state, env.seed);
+    // The Getaway escape step must grant three stars the moment it starts,
+    // or it would complete instantly when the player arrives with no stars.
+    if (mission.id === "the-getaway" && step.type === "escape") {
+      if (env.wanted.stars < 3) env.addCrime(env.wanted, 3, now);
     }
   }
 
-  const px = game.player.x;
-  const py = game.player.y;
-
-  if (step.type === 'steal') {
-    if (game.player.car) {
-      events.stepDone = true;
-    }
-  } else if (step.type === 'goto') {
+  let done = false;
+  if (step.type === "steal") {
+    done = !!env.player.car;
+  } else if (step.type === "goto") {
     if (step.timeLimit) {
-      state.stepTimer -= dt;
-      if (state.stepTimer <= 0 && dist(px, py, step.x, step.y) > step.radius) {
-        state.failed = 'Out of time — the delivery window closed.';
+      state.timer -= dt;
+      if (state.timer <= 0) {
+        state.failed = "Out of time — the delivery window closed.";
         events.failed = state.failed;
         return events;
       }
     }
-    if (dist(px, py, step.x, step.y) < step.radius) {
-      if (state.stepIndex === 0 && mission.id === 'delivery-run') {
-        state.packageHeld = true;
-        events.pickedUp = true;
+    const d = Math.hypot(env.player.x - step.x, env.player.y - step.y);
+    if (d <= step.radius) {
+      done = true;
+      if (mission.id === "delivery-run" && state.step === 0) {
+        state.hasPackage = true;
+        events.pickup = true;
       }
-      events.stepDone = true;
     }
-  } else if (step.type === 'fight') {
-    if (state.killsLeft <= 0) events.stepDone = true;
-  } else if (step.type === 'escape') {
-    if (game.wanted.stars === 0) events.stepDone = true;
+  } else if (step.type === "fight") {
+    done = state.killsLeft <= 0;
+  } else if (step.type === "escape") {
+    done = env.wanted.stars === 0;
   }
 
-  if (events.stepDone) {
-    state.stepIndex++;
-    state.stepStarted = false;
-    if (state.stepIndex >= mission.steps.length) {
-      game.player.money += mission.reward;
-      state.index++;
-      state.stepIndex = 0;
-      state.packageHeld = false;
-      events.completedMission = mission;
-      if (state.index >= MISSIONS.length) events.storyDone = true;
+  if (!done) return events;
+
+  state.step += 1;
+  state.started = false;
+  if (state.step >= mission.steps.length) {
+    env.player.money += mission.reward;
+    state.index += 1;
+    state.step = 0;
+    state.hasPackage = false;
+    events.completed = mission;
+    if (state.index >= MISSIONS.length) {
+      events.storyDone = true;
     }
   }
   return events;
 }
 
-export function resetMissionStep(state, rng) {
-  state.stepIndex = 0;
-  state.stepStarted = false;
+export function resetMission(state, seed) {
+  state.step = 0;
+  state.started = false;
+  state.timer = 0;
   state.enemies = [];
   state.killsLeft = 0;
-  state.packageHeld = false;
+  state.hasPackage = false;
   state.failed = null;
-  beginStep(state, rng);
+  startStep(state, seed);
 }

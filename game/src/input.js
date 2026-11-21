@@ -1,51 +1,71 @@
-// Keyboard and mouse input for Palmera Bay. Tracks held keys, edge-triggered
-// presses (so E / Space / F fire once per tap), and the mouse position in
-// screen space for aiming.
-
+// Keyboard and mouse input with edge-triggered presses.
 export function createInput(canvas) {
   const input = {
-    keys: new Set(),
+    held: new Set(),
     pressed: new Set(),
     mouseX: 0,
     mouseY: 0,
     mouseDown: false,
-    mouseClicked: false,
+    clicked: false,
+
+    anyHeld(keys) {
+      for (const k of keys) {
+        if (this.held.has(k)) return true;
+      }
+      return false;
+    },
+
+    wasPressed(key) {
+      return this.pressed.has(key);
+    },
+
+    endFrame() {
+      this.pressed.clear();
+      this.clicked = false;
+    },
   };
 
-  window.addEventListener('keydown', (event) => {
-    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(event.key)) {
-      event.preventDefault();
-    }
-    if (!event.repeat) input.pressed.add(event.key.toLowerCase());
-    input.keys.add(event.key.toLowerCase());
-  });
-  window.addEventListener('keyup', (event) => {
-    input.keys.delete(event.key.toLowerCase());
-  });
-  window.addEventListener('blur', () => {
-    input.keys.clear();
+  const watched = [
+    "ArrowUp",
+    "ArrowDown",
+    "ArrowLeft",
+    "ArrowRight",
+    " ",
+    "Spacebar",
+  ];
+
+  window.addEventListener("keydown", (event) => {
+    if (watched.includes(event.key)) event.preventDefault();
+    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    if (!event.repeat) input.pressed.add(key);
+    input.held.add(key);
   });
 
-  canvas.addEventListener('mousemove', (event) => {
+  window.addEventListener("keyup", (event) => {
+    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    input.held.delete(key);
+  });
+
+  window.addEventListener("blur", () => {
+    input.held.clear();
+  });
+
+  canvas.addEventListener("mousemove", (event) => {
     const rect = canvas.getBoundingClientRect();
     input.mouseX = event.clientX - rect.left;
     input.mouseY = event.clientY - rect.top;
   });
-  canvas.addEventListener('mousedown', (event) => {
+
+  canvas.addEventListener("mousedown", (event) => {
     if (event.button === 0) {
       input.mouseDown = true;
-      input.mouseClicked = true;
+      input.clicked = true;
     }
   });
-  window.addEventListener('mouseup', () => {
-    input.mouseDown = false;
+
+  window.addEventListener("mouseup", (event) => {
+    if (event.button === 0) input.mouseDown = false;
   });
 
-  input.held = (...names) => names.some((n) => input.keys.has(n));
-  input.wasPressed = (name) => input.pressed.has(name);
-  input.endFrame = () => {
-    input.pressed.clear();
-    input.mouseClicked = false;
-  };
   return input;
 }

@@ -1,110 +1,103 @@
-// Combat for Palmera Bay: the player's pistol and fists, bullets in flight,
-// and the rival gang members who shoot back during fight missions.
-import { PLAYER } from './config.js';
-import { dist, clamp } from './random.js';
+// Bullets, punches, hurting the player and gang enemies.
+import { PLAYER } from "./config.js";
+import { range } from "./random.js";
 
 export function createCombat() {
-  return {
-    bullets: [], // {x, y, angle, speed, from, damage, life}
-    muzzle: 0, // frames left to draw the muzzle flash
-    shootCooldown: 0,
-    punchCooldown: 0,
-  };
+  return { bullets: [], muzzle: 0, shootCooldown: 0, punchCooldown: 0 };
 }
 
-// Fire one bullet from (x, y) toward angle. `from` is 'player' or 'enemy'.
-export function fireBullet(combat, x, y, angle, from, damage) {
+export function fireBullet(combat, x, y, angle, damage, isPlayer) {
   combat.bullets.push({
     x: x + Math.cos(angle) * 20,
     y: y + Math.sin(angle) * 20,
     angle,
     speed: 760,
-    from,
-    damage: damage || PLAYER.pistolDamage,
+    origin: isPlayer ? "player" : "enemy",
+    damage: damage === undefined ? PLAYER.pistolDamage : damage,
     life: 0.9,
   });
-  if (from === 'player') combat.muzzle = 4;
+  if (isPlayer) combat.muzzle = 4;
 }
 
-export function updateBullets(combat, dt, game) {
+export function updateCombat(combat, dt, player, enemies, onKill) {
   combat.shootCooldown = Math.max(0, combat.shootCooldown - dt);
   combat.punchCooldown = Math.max(0, combat.punchCooldown - dt);
   combat.muzzle = Math.max(0, combat.muzzle - 1);
   const kept = [];
-  for (const b of combat.bullets) {
-    b.x += Math.cos(b.angle) * b.speed * dt;
-    b.y += Math.sin(b.angle) * b.speed * dt;
-    b.life -= dt;
-    if (b.life <= 0) continue;
+  for (const bullet of combat.bullets) {
+    bullet.x += Math.cos(bullet.angle) * bullet.speed * dt;
+    bullet.y += Math.sin(bullet.angle) * bullet.speed * dt;
+    bullet.life -= dt;
+    if (bullet.life <= 0) continue;
     let hit = false;
-    if (b.from === 'player') {
-      for (const e of game.missions.enemies) {
-        if (!e.alive) continue;
-        if (dist(b.x, b.y, e.x, e.y) < 16) {
-          e.health -= b.damage;
-          if (e.health <= 0) {
-            e.alive = false;
-            game.missions.killsLeft = Math.max(0, game.missions.killsLeft - 1);
-            game.player.money += 40;
+    if (bullet.origin === "player") {
+      for (const enemy of enemies) {
+        if (!enemy.alive) continue;
+        const d = Math.hypot(enemy.x - bullet.x, enemy.y - bullet.y);
+        if (d <= 16) {
+          enemy.health -= bullet.damage;
+          if (enemy.health <= 0) {
+            enemy.alive = false;
+            onKill(enemy);
           }
           hit = true;
           break;
         }
       }
-    } else if (dist(b.x, b.y, game.player.x, game.player.y) < 14 && !game.player.car) {
-      hurtPlayer(game, b.damage);
-      hit = true;
+    } else if (!player.car) {
+      const d = Math.hypot(player.x - bullet.x, player.y - bullet.y);
+      if (d <= 14) {
+        hurtPlayer(player, bullet.damage);
+        hit = true;
+      }
     }
-    if (!hit) kept.push(b);
+    if (!hit) kept.push(bullet);
   }
   combat.bullets = kept;
 }
 
-export function hurtPlayer(game, damage) {
-  if (game.player.invuln > 0) return;
-  game.player.health = clamp(game.player.health - damage, 0, PLAYER.maxHealth);
-  game.player.invuln = 0.35;
-  game.player.hurtFlash = 0.25;
-  if (game.player.health <= 0) game.over = 'wasted';
+// Returns "wasted" when the player's health reaches zero, else null.
+export function hurtPlayer(player, damage) {
+  if (player.invuln > 0) return null;
+  player.health = Math.max(0, Math.min(PLAYER.maxHealth, player.health - damage));
+  player.invuln = 0.35;
+  player.hurtFlash = 0.25;
+  if (player.health <= 0) return "wasted";
+  return null;
 }
 
-// Enemy gang member AI: close in on the player and shoot when in range.
-export function updateEnemies(game, dt, rng) {
-  for (const e of game.missions.enemies) {
-    if (!e.alive) continue;
-    const d = dist(e.x, e.y, game.player.x, game.player.y);
-    e.angle = Math.atan2(game.player.y - e.y, game.player.x - e.x);
+export function updateEnemies(enemies, dt, player, combat, rng) {
+  for (const enemy of enemies) {
+    if (!enemy.alive) continue;
+    enemy.angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+    const d = Math.hypot(player.x - enemy.x, player.y - enemy.y);
+    enemy.cooldown -= dt;
     if (d > 260) {
-      e.x += Math.cos(e.angle) * e.speed * dt;
-      e.y += Math.sin(e.angle) * e.speed * dt;
-    } else {
-      e.shootCooldown -= dt;
-      if (e.shootCooldown <= 0 && !game.over) {
-        fireBullet(game.combat, e.x, e.y, e.angle + (rng() - 0.5) * 0.22, 'enemy', 9);
-        e.shootCooldown = 1.1 + rng() * 0.9;
-      }
+      enemy.x += Math.cos(enemy.angle) * enemy.speed * dt;
+      enemy.y += Math.sin(enemy.angle) * enemy.speed * dt;
+    } else if (enemy.cooldown <= 0) {
+      const spread = range(rng, -0.08, 0.08);
+      fireBullet(combat, enemy.x, enemy.y, enemy.angle + spread, 9, false);
+      enemy.cooldown = range(rng, 1.1, 2.0);
     }
   }
 }
 
-// The player's punch: a short arc in front of the player, hurts enemies and
-// shoves pedestrians (which counts as a crime if the police see it).
-export function punch(game) {
-  const p = game.player;
-  const rangePx = 46;
-  const px = p.x + Math.cos(p.angle) * rangePx;
-  const py = p.y + Math.sin(p.angle) * rangePx;
-  let hitEnemy = false;
-  for (const e of game.missions.enemies) {
-    if (e.alive && dist(px, py, e.x, e.y) < 30) {
-      e.health -= PLAYER.punchDamage;
-      if (e.health <= 0) {
-        e.alive = false;
-        game.missions.killsLeft = Math.max(0, game.missions.killsLeft - 1);
-        game.player.money += 40;
+export function punch(player, enemies, onKill) {
+  const px = player.x + Math.cos(player.angle) * 46;
+  const py = player.y + Math.sin(player.angle) * 46;
+  let hit = false;
+  for (const enemy of enemies) {
+    if (!enemy.alive) continue;
+    const d = Math.hypot(enemy.x - px, enemy.y - py);
+    if (d <= 30) {
+      enemy.health -= PLAYER.punchDamage;
+      if (enemy.health <= 0) {
+        enemy.alive = false;
+        onKill(enemy);
       }
-      hitEnemy = true;
+      hit = true;
     }
   }
-  return hitEnemy;
+  return hit;
 }

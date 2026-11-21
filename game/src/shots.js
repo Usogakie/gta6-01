@@ -1,109 +1,104 @@
-// Staged screenshot scenes for Palmera Bay. Each shot composes the real game
-// — the same world, traffic, HUD and mission state a player sees — at a
-// chosen moment, so the entry's screenshots show the open world at its best.
-import { WORLD } from './config.js';
-import { makeRng, pick } from './random.js';
-import { makeCar } from './traffic.js';
-import { addCrime } from './police.js';
-import { beginStep } from './missions.js';
+// Staged screenshots: compose one of four scenes for ?shot=<name>&seed=1.
+import { WORLD_WIDTH, WORLD_HEIGHT } from "./config.js";
+import { createCar } from "./traffic.js";
+import { clamp } from "./random.js";
+import { addCrime } from "./police.js";
+import { startStep, resetMission } from "./missions.js";
 
-function placePlayerCar(game, x, y, angle, color, model) {
-  const rng = makeRng(99);
-  const car = makeCar(x, y, angle, 'player', rng);
-  car.color = color;
-  car.model = model;
+export function placePlayerInCar(g, x, y, angle, color, model) {
+  const car = createCar(x, y, angle, color, model, "player");
   car.speed = 240;
-  game.player.car = car;
-  game.player.x = x;
-  game.player.y = y;
-  game.player.angle = angle;
-  game.cars.push(car);
+  g.player.car = car;
+  g.player.x = x;
+  g.player.y = y;
+  g.player.angle = angle;
+  g.traffic.push(car);
   return car;
 }
 
-function centreCamera(game) {
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  game.cam.w = vw;
-  game.cam.h = vh;
-  game.cam.x = Math.max(0, Math.min(WORLD.width - vw, game.player.x - vw / 2));
-  game.cam.y = Math.max(0, Math.min(WORLD.height - vh, game.player.y - vh / 2));
+export function centreCamera(g) {
+  const cam = g.camera;
+  cam.x = clamp(
+    g.player.x - cam.w / 2,
+    0,
+    Math.max(0, WORLD_WIDTH - cam.w),
+  );
+  cam.y = clamp(
+    g.player.y - cam.h / 2,
+    0,
+    Math.max(0, WORLD_HEIGHT - cam.h),
+  );
 }
 
-export function setupShot(game, name, seed) {
-  const rng = makeRng(seed + 31);
-  game.state = 'playing';
-  game.shotMode = true;
-  game.missions.index = 0;
-  game.missions.stepIndex = 0;
+export function setupShot(g, name) {
+  g.screen = "playing";
+  g.shotMode = true;
+  g.missions.index = 0;
+  g.missions.step = 0;
+  resetMission(g.missions, g.seed);
 
-  if (name === 'start') {
-    // Title screen over the living Downtown, traffic cruising below.
-    game.state = 'title';
-    game.player.x = 1000;
-    game.player.y = 900;
-    centreCamera(game);
+  if (name === "start") {
+    g.screen = "title";
+    g.player.x = 1000;
+    g.player.y = 900;
+    g.player.angle = -Math.PI / 2;
+    centreCamera(g);
     return;
   }
 
-  if (name === 'drive') {
-    // Midtown avenue at speed: the player driving, traffic around, HUD live.
-    game.missions.index = 0;
-    game.missions.stepIndex = 1;
-    beginStep(game.missions, rng);
-    placePlayerCar(game, 1000, 980, -Math.PI / 2, '#c0392b', 'Comet GT');
-    // A little traffic ahead and behind on the same avenue.
+  if (name === "drive") {
+    g.missions.index = 0;
+    g.missions.step = 1;
+    startStep(g.missions, g.seed);
+    placePlayerInCar(g, 1000, 980, -Math.PI / 2, "#d23b2e", "Comet GT");
+    const colors = ["#2e6fd2", "#e8c832", "#1f8a6d", "#e8762a"];
     for (let i = 0; i < 4; i++) {
-      const c = makeCar(1000 + (i % 2 === 0 ? 26 : -26), 700 + i * 220, -Math.PI / 2, 'traffic', rng);
-      c.color = pick(rng, ['#2980b9', '#f1c40f', '#16a085', '#e67e22']);
-      c.speed = 130;
-      game.cars.push(c);
+      const x = 1000 + (i % 2 === 0 ? 26 : -26);
+      const y = 700 + i * 220;
+      const car = createCar(x, y, -Math.PI / 2, colors[i], "Bay Cruiser", "traffic");
+      car.speed = 130;
+      g.traffic.push(car);
     }
-    game.banner = 'Mission 1 — First Wheels: Drive to the Marina garage';
-    game.bannerAt = game.time;
-    game.bannerSeconds = 999;
-    centreCamera(game);
+    g.banner.text = "Mission 1 — First Wheels: Drive to the Marina garage";
+    g.banner.until = g.time + 999;
+    centreCamera(g);
     return;
   }
 
-  if (name === 'chase') {
-    // Golden-hour police chase: 3 stars, cruisers closing in, minimap lit up.
-    game.dusk = true;
-    game.missions.index = 3;
-    game.missions.stepIndex = 0;
-    beginStep(game.missions, rng);
-    placePlayerCar(game, 1400, 1000, 0, '#c0392b', 'Sunrise Sedan');
-    addCrime(game.wanted, 3, game.time);
+  if (name === "chase") {
+    g.dusk = true;
+    g.missions.index = 3;
+    g.missions.step = 0;
+    startStep(g.missions, g.seed);
+    placePlayerInCar(g, 1400, 1000, 0, "#d23b2e", "Sunrise Sedan");
+    addCrime(g.wanted, 3, g.time);
     for (let i = 0; i < 3; i++) {
-      const cop = makeCar(1400 - 350 - i * 110, 1000 + (i - 1) * 46, 0, 'police', rng);
-      cop.color = '#1a1a2e';
-      cop.model = 'PD Interceptor';
-      cop.speed = 300;
-      game.police.push(cop);
+      const x = 1050 - i * 110;
+      const y = 1000 + (i % 2 === 0 ? 46 : -46);
+      const cruiser = createCar(x, y, 0, "#141c2e", "PD Interceptor", "police");
+      cruiser.speed = 300;
+      g.police.push(cruiser);
     }
-    game.banner = 'WANTED ★★★ — Lose the police, then reach the safehouse!';
-    game.bannerAt = game.time;
-    game.bannerSeconds = 999;
-    centreCamera(game);
+    g.banner.text = "WANTED ★★★ — Lose the police, then reach the safehouse!";
+    g.banner.until = g.time + 999;
+    centreCamera(g);
     return;
   }
 
-  if (name === 'mission') {
-    // Turf War on foot at Beachfront: the crew, the marker and Rosa's call.
-    game.missions.index = 2;
-    game.missions.stepIndex = 0;
-    beginStep(game.missions, rng);
-    game.player.x = 2000;
-    game.player.y = 1030;
-    game.player.angle = Math.PI / 4;
-    game.player.ammo = 24;
-    game.banner = 'ROSA: The Coral Kings are on Beachfront. Take them out, Vic.';
-    game.bannerAt = game.time;
-    game.bannerSeconds = 999;
-    centreCamera(game);
+  if (name === "mission") {
+    g.missions.index = 2;
+    g.missions.step = 0;
+    startStep(g.missions, g.seed);
+    g.player.car = null;
+    g.player.x = 2000;
+    g.player.y = 1030;
+    g.player.angle = Math.PI / 4;
+    g.player.ammo = 24;
+    g.banner.text = "ROSA: The Coral Kings are on Beachfront. Take them out, Vic.";
+    g.banner.until = g.time + 999;
+    centreCamera(g);
     return;
   }
 
-  // Unknown shot name: just play from the start.
-  centreCamera(game);
+  centreCamera(g);
 }
