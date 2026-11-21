@@ -2,13 +2,13 @@
 // the wanted level, mission flow and the screens — title, pause, wasted,
 // busted and the Bay King ending.
 import { WORLD, PLAYER, CAR, MISSIONS, DIALOGUE } from './config.js';
-import { makeRng, clamp, dist, angleDiff } from './random.js';
-import { buildCity, hitsBuilding, insideWorld, nearestRoadPoint } from './world.js';
+import { makeRng, clamp, dist } from './random.js';
+import { buildCity, hitsBuilding, insideWorld } from './world.js';
 import { createInput } from './input.js';
 import { createAudio } from './audio.js';
 import { spawnTraffic, spawnPedestrians, updateTrafficCar, updatePedestrian, carHitsPoint } from './traffic.js';
 import { createWanted, addCrime, syncPolice, updatePoliceCar, updateWanted, wantedLevel } from './police.js';
-import { createMissionState, currentMission, currentStep, objectiveText, missionMarker, updateMissions, resetMissionStep } from './missions.js';
+import { createMissionState, currentMission, objectiveText, missionMarker, updateMissions, resetMissionStep } from './missions.js';
 import { createCombat, fireBullet, updateBullets, updateEnemies, punch, hurtPlayer } from './combat.js';
 import { drawWorld, drawHud, drawTitle, drawOverlay } from './render.js';
 import { loadSave, writeSave } from './save.js';
@@ -107,6 +107,11 @@ function enterCar(car) {
   p.y = car.y;
   p.angle = car.angle;
   if (copCar) {
+    // A stolen cruiser leaves the police fleet: it is the player's car now,
+    // not a pursuer still chasing itself (it would ram the player forever).
+    const i = game.police.indexOf(car);
+    if (i !== -1) game.police.splice(i, 1);
+    game.cars.push(car);
     // Stealing a cruiser is the loudest crime there is.
     addCrime(game.wanted, 2, game.time);
     say('You stole a PD cruiser! (+2 ★)');
@@ -367,10 +372,10 @@ function render() {
   ctx.fillRect(0, 0, vw, vh);
   if (game.state === 'title') {
     // The title screen shows the living city behind it.
-    ctx.save();
-    ctx.translate(-game.cam.x, -game.cam.y);
     game.cam.x = clamp(1000 - vw / 2, 0, WORLD.width - vw);
     game.cam.y = clamp(900 - vh / 2, 0, WORLD.height - vh);
+    ctx.save();
+    ctx.translate(-game.cam.x, -game.cam.y);
     drawWorld(ctx, game, game.cam);
     ctx.restore();
     drawTitle(ctx, game, { w: vw, h: vh });

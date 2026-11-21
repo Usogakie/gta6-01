@@ -1,9 +1,8 @@
 // The Palmera Bay PD: the wanted system and the police cars that answer it.
 // Crimes raise heat; hiding out of every cop's sight drains it again.
-import { WANTED, CAR } from './config.js';
-import { clamp, dist, angleDiff, angleLerp } from './random.js';
+import { WANTED, CAR, WORLD } from './config.js';
+import { clamp, dist, angleLerp } from './random.js';
 import { makeCar } from './traffic.js';
-import { WORLD } from './config.js';
 
 export function createWanted() {
   return {
@@ -85,5 +84,3 @@ export function updateWanted(wanted, dt, nearestCopDist, now) {
     wanted.hiddenTime = 0;
   }
 }
-
-export { angleDiff };

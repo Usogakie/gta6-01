@@ -1,8 +1,8 @@
 // Staged screenshot scenes for Palmera Bay. Each shot composes the real game
 // — the same world, traffic, HUD and mission state a player sees — at a
 // chosen moment, so the entry's screenshots show the open world at its best.
-import { WORLD, MISSIONS } from './config.js';
-import { makeRng, pick, range } from './random.js';
+import { WORLD } from './config.js';
+import { makeRng, pick } from './random.js';
 import { makeCar } from './traffic.js';
 import { addCrime } from './police.js';
 import { beginStep } from './missions.js';
@@ -107,5 +107,3 @@ export function setupShot(game, name, seed) {
   // Unknown shot name: just play from the start.
   centreCamera(game);
 }
-
-export { MISSIONS, range };

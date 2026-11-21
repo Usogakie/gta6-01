@@ -2,7 +2,7 @@
 // grid and turn at intersections; pedestrians stroll the sidewalks and flee
 // when a gun goes off or a car comes at them.
 import { WORLD, CAR, CAR_COLORS, CAR_MODELS } from './config.js';
-import { makeRng, pick, range, clamp, angleDiff } from './random.js';
+import { makeRng, pick, range, clamp } from './random.js';
 import { hitsBuilding, nearestRoadPoint, onRoad } from './world.js';
 
 let carId = 0;
@@ -143,5 +143,3 @@ export function carHitsPoint(car, x, y) {
   const ly = dx * sa + dy * ca;
   return Math.abs(lx) < CAR.length / 2 + 6 && Math.abs(ly) < CAR.width / 2 + 6;
 }
-
-export { angleDiff };

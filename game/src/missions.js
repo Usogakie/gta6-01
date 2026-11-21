@@ -2,6 +2,7 @@
 // current step, spawns rival gang members for fight steps, and pays out.
 import { MISSIONS } from './config.js';
 import { dist, range } from './random.js';
+import { addCrime } from './police.js';
 
 export function createMissionState() {
   return {
@@ -14,7 +15,6 @@ export function createMissionState() {
     packageHeld: false,
     message: '',
     messageAt: 0,
-    justCompleted: null,
     failed: null,
   };
 }
@@ -64,7 +64,6 @@ export function beginStep(state, rng) {
   state.stepStarted = true;
   state.stepTimer = step && step.timeLimit ? step.timeLimit : 0;
   if (step && step.type === 'fight') spawnEnemies(state, step, rng);
-  if (step && step.type === 'escape') state.escapeReady = true;
 }
 
 // Advance the mission state one frame. Returns events for the main loop:
@@ -75,7 +74,15 @@ export function updateMissions(state, game, dt, rng) {
   if (!mission) return events;
   const step = currentStep(state);
   if (!step) return events;
-  if (!state.stepStarted) beginStep(state, rng);
+  if (!state.stepStarted) {
+    beginStep(state, rng);
+    if (step.type === 'escape' && game.wanted.stars < 3) {
+      // The getaway starts hot, as the briefing says: the whole PD is
+      // already on the player. Without this the escape step would complete
+      // at once, since the player usually arrives with no wanted stars.
+      addCrime(game.wanted, 3, game.time);
+    }
+  }
 
   const px = game.player.x;
   const py = game.player.y;
@@ -111,7 +118,6 @@ export function updateMissions(state, game, dt, rng) {
     state.stepStarted = false;
     if (state.stepIndex >= mission.steps.length) {
       game.player.money += mission.reward;
-      state.justCompleted = mission;
       state.index++;
       state.stepIndex = 0;
       state.packageHeld = false;

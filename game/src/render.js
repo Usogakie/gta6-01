@@ -1,11 +1,9 @@
 // Rendering for Palmera Bay: the top-down city, its cars and people, and the
 // whole HUD — wanted stars, money, health, minimap, objective and menus.
 // Everything is drawn on one canvas, no images, no network.
-import { WORLD, DISTRICTS, CAR, MISSIONS } from './config.js';
-import { clamp, dist } from './random.js';
+import { WORLD, CAR } from './config.js';
+import { clamp } from './random.js';
 import { districtAt } from './world.js';
-
-const SKY = '#0e1420';
 
 function drawCar(ctx, car, isPlayer) {
   ctx.save();
@@ -464,5 +462,3 @@ export function drawOverlay(ctx, view, title, lines, prompt) {
     ctx.fillText(prompt, W / 2, H / 2 + 70);
   }
 }
-
-export { SKY, dist };
